@@ -6,7 +6,7 @@
 #include<unistd.h>
 #include<cstring>
 #include<string>
-
+#include<vector>
 using namespace std;
 
 int main(){
@@ -50,39 +50,45 @@ int main(){
         printf("socket listening...\n");
     }
     //4.接受客户端连接
-    while(true)
+vector<int> clients;
+
+while (true)
+{
+    int connfd = accept(sockfd, nullptr, nullptr);
+    if (connfd >= 0)
     {
-        int connfd = accept(sockfd,nullptr,nullptr);
-        if(connfd<0)
-        {
-            printf("socket accept error:errno=%d errmsg=%s\n",errno,strerror(errno));
-            return -1;  
-        }
-        char buf[1024] = {0};
-        //5.接收客户端数据
-        while(true)
-        {
-            memset(buf, 0, sizeof(buf));
-            ssize_t len =recv(connfd,buf,sizeof(buf),0);
-            if (len == 0)
-            {
-                printf("client closed\n");
-                close(connfd);
-                break;
-            }
-            else if (len < 0)
-            {
-                printf("recv error:errno=%d errmsg=%s\n",errno,strerror(errno));
-                close(connfd);
-                break;
-            }
-                printf("recv client connfd: %d msg=%s\n",connfd,buf);
-                //6向客户端发送数据
-                send(connfd,buf,len,0);
-        }
-
-
+        printf("new client: %d\n", connfd);
+        clients.push_back(connfd);
     }
+
+
+    for (auto it = clients.begin(); it != clients.end(); )
+    {
+        int fd = *it;
+        char buf[1024] = {0};
+
+        ssize_t len = recv(fd, buf, sizeof(buf), 0); // 用 fd
+
+        if (len > 0)
+        {
+            printf("recv client fd=%d msg=%s\n", fd, buf);
+            send(fd, buf, len, 0);
+            ++it;
+        }
+        else if (len == 0)
+        {
+            printf("client closed fd=%d\n", fd);
+            close(fd);
+            it = clients.erase(it);
+        }
+        else
+        {
+            printf("recv error fd=%d errno=%d\n", fd, errno);
+            close(fd);
+            it = clients.erase(it);
+        }
+    }
+}
     //7.关闭连接
     close(sockfd);
     return 0;
