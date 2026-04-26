@@ -13,6 +13,54 @@ void setNonBlocking(int fd){// 设置 fd 为非阻塞模式
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
+void handleAccept(int sockfd, int epfd){
+    while (true) {
+        int connfd = accept(sockfd, nullptr, nullptr);
+        if (connfd < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                break; // 没有更多连接了
+            } else {
+                perror("accept");
+                break;
+            }
+        }
+        setNonBlocking(connfd);
+        cout << "new client: " << connfd << endl;
+
+        epoll_event ev_client{};
+        ev_client.events = EPOLLIN;
+        ev_client.data.fd = connfd;
+
+        epoll_ctl(epfd, EPOLL_CTL_ADD, connfd, &ev_client);
+    }
+}
+
+void handleRead(int fd, int epfd){
+    while (true) {
+        char buf[1024];
+        int len = recv(fd, buf, sizeof(buf), 0);
+
+        if (len > 0) {
+            cout << "recv fd=" << fd << " msg=" << string(buf, len) << endl;
+            send(fd, buf, len, 0);
+        }
+        else if (len == 0) {
+            cout << "client closed: " << fd << endl;
+            close(fd);
+            epoll_ctl(epfd, EPOLL_CTL_DEL, fd, nullptr);
+            break;
+        }
+        else {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                break; // 数据读完了
+            } else {
+                epoll_ctl(epfd, EPOLL_CTL_DEL, fd, nullptr);
+                close(fd);
+                break;
+            }
+        }
+    }
+}
 
 int main() {
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -47,51 +95,10 @@ int main() {
 
             // 有新连接
             if (fd == sockfd) {// 服务器 fd 有事件，说明有新连接
-                while (true) {
-                    int connfd = accept(sockfd, nullptr, nullptr);
-                    if (connfd < 0) {
-                        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                            break; // 没有更多连接了
-                        } else {
-                            perror("accept");
-                            break;
-                        }
-                    }
-                    setNonBlocking(connfd);
-                    cout << "new client: " << connfd << endl;
-
-                    epoll_event ev_client{};
-                    ev_client.events = EPOLLIN;
-                    ev_client.data.fd = connfd;
-
-                    epoll_ctl(epfd, EPOLL_CTL_ADD, connfd, &ev_client);
-                }
+                handleAccept(sockfd, epfd);
             }
             else {// 客户端有事件，说明有数据可读
-               while (true) {
-                    char buf[1024];
-                    int len = recv(fd, buf, sizeof(buf), 0);
-
-                    if (len > 0) {
-                        cout << "recv fd=" << fd << " msg=" << string(buf, len) << endl;
-                        send(fd, buf, len, 0);
-                    }
-                    else if (len == 0) {
-                        cout << "client closed: " << fd << endl;
-                        close(fd);
-                        epoll_ctl(epfd, EPOLL_CTL_DEL, fd, nullptr);
-                        break;
-                    }
-                    else {
-                        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                            break; // 数据读完了
-                        } else {
-                            epoll_ctl(epfd, EPOLL_CTL_DEL, fd, nullptr);
-                            close(fd);
-                            break;
-                        }
-                    }
-                }
+                handleRead(fd, epfd);
             }
         }
     }
