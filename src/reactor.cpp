@@ -46,7 +46,7 @@ void Reactor:: run(){
         for (int i = 0; i < n; i++) {// 遍历发生事件的 fd
             int fd = events[i].data.fd;// 只获取发生事件的 fd
 
-            if (fd != sockfd && (events[i].events & (EPOLLERR | EPOLLHUP))) {
+            if (fd != sockfd && (events[i].events & (EPOLLERR | EPOLLHUP))) {// 客户端发生错误或挂起，关闭连接
                 closeConnection(fd);
                 continue;
             }
