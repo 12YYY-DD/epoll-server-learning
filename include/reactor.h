@@ -1,5 +1,7 @@
 #pragma once
 #include <map>
+
+#include "threadpool.h"
 #include "connection.h"
 
 using namespace std;
@@ -11,6 +13,7 @@ public:
 private:
     int sockfd;
     int epfd;
+    ThreadPool pool;
     map<int, Connection*> conns;
 
     void handleAccept();
