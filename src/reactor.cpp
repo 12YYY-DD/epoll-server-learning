@@ -10,7 +10,7 @@
 
 using namespace std;
 
-Reactor::Reactor(int port){
+Reactor::Reactor(int port): pool(4){// 构造函数，初始化服务器4线程
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     setNonBlocking(sockfd);// 设置服务器 fd 为非阻塞模式
     sockaddr_in addr{};
@@ -125,14 +125,30 @@ void Reactor::handleRead(int fd){
     while((pos = conn->buffer.find('\n')) != string::npos){
         string msg = conn->buffer.substr(0, pos);
         conn->buffer.erase(0, pos + 1);
-
+        
         cout<<"完整消息："<<msg<<endl;
-        size_t total = 0;
-        while (total < msg.size()) {
-            ssize_t n = send(fd, msg.c_str() + total, msg.size() - total, 0);
-            if (n <= 0) break;
-            total += n;
-        }// 处理完全发送给客户端
+        int client_fd = fd;
+        //把处理请求的任务提交给线程池
+        pool.addTask([this,client_fd,msg]{
+            auto tid = std::this_thread::get_id();
+
+            std::cout << "[START] thread: " << tid 
+            << " msg: " << msg << std::endl;
+
+            sleep(10);
+
+            std::cout << "[END]   thread: " << tid 
+            << " msg: " << msg << std::endl;
+            //模拟业务处理
+            string response = "Echo: " + msg + "\n";
+            size_t total = 0;
+            while (total < response.size()) {
+                ssize_t n = send(client_fd, response.c_str() + total, response.size() - total, 0);
+                if (n <= 0) break;
+                total += n;
+            }// 处理完全发送给客户端
+        });// 线程池会处理这个任务，发送响应给客户端
+
     }
 }
 
