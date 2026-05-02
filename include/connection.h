@@ -9,7 +9,7 @@ class Connection {//补充数据和状态
 public:
     int fd;
     string buffer;//缓存数据
-
+    string writebuffer;//待发送数据
     Connection(int fd_);// 构造函数声明
 
 };
