@@ -42,7 +42,7 @@ void Reactor:: run(){
     while (true) {
         // 3. 等待事件
         int n = epoll_wait(epfd, events, 1024, -1);// 阻塞等待事件发生
-
+        handlePendingTasks();// 处理待执行的任务
         for (int i = 0; i < n; i++) {// 遍历发生事件的 fd
             int fd = events[i].data.fd;// 只获取发生事件的 fd
 
@@ -56,17 +56,21 @@ void Reactor:: run(){
                 handleAccept();
             }
             else {// 客户端有事件，说明有数据可读
-                if(events[i].events & EPOLLOUT){
-                    handleWrite(fd);
-                }
                 if(events[i].events & EPOLLIN){
                     handleRead(fd);
+                }
+                if(events[i].events & EPOLLOUT){
+                    handleWrite(fd);
                 }
             }
         }
     }
 }
 
+void Reactor:: addTask(function<void()> task){
+    lock_guard<mutex> lock(taskMutex);
+    pendingTasks.push(task);
+}
 
 
 void Reactor:: handleAccept(){
@@ -174,26 +178,49 @@ void Reactor::handleRead(int fd){
             std::cout << "[START] thread: " << tid 
             << " msg: " << msg << std::endl;
 
-            sleep(2);
-
-            std::cout << "[END]   thread: " << tid 
-            << " msg: " << msg << std::endl;
             //模拟业务处理
             string response = "Echo: " + msg + "\n";
-            auto it = conns.find(client_fd);
-            if(it == conns.end()){
-                log("ERROR", "client fd not found");
-                return;
-            }
-            Connection* conn = it->second;// 获取连接对象
-            conn->writebuffer += response;// 把响应放到待发送缓冲区
-            //通知epoll关注写事件
-            epoll_event ev{};
-            ev.events = EPOLLIN | EPOLLOUT;// 关注可读和可写事件
-            ev.data.fd = client_fd;// 关联客户端 fd
-            epoll_ctl(epfd, EPOLL_CTL_MOD, client_fd, &ev);// 修改 epoll 监听，关注写事件
-        });// 线程池会处理这个任务，发送响应给客户端
+            this->addTask([this,client_fd,response]{// 把发送响应的任务提交给 Reactor 处理，发送响应给客户端
+                auto tid = std::this_thread::get_id();// 获取当前线程 ID
 
+                std::cout << "[SEND]  thread: " << tid 
+                << " response: " << response;
+                auto it = conns.find(client_fd);// 查找连接对象
+                if(it == conns.end()){
+                    log("ERROR", "client fd not found");
+                    return;
+                }
+                Connection* conn = it->second;// 获取连接对象
+                conn->writebuffer += response;// 把响应数据放到连接对象的写缓冲区
+                //修改 epoll 监听，增加写事件
+                epoll_event ev{};
+                if (!conn->writebuffer.empty()) {
+                     ev.events = EPOLLIN | EPOLLOUT;//有数据才监听可写事件，否则只监听可读事件
+                }
+                else {
+                    ev.events = EPOLLIN;
+                }
+                ev.data.fd = client_fd;
+
+                epoll_ctl(epfd, EPOLL_CTL_MOD, client_fd, &ev);
+            });// 把发送响应的任务提交给线程池
+            std::cout << "[END]   thread: " << tid 
+            << " msg: " << msg << std::endl;
+
+        });// 线程池会处理这个任务，发送响应给客户端
+    }
+}
+
+void Reactor:: handlePendingTasks(){// 处理待执行的任务
+    queue <function<void()>> tasks;// 临时队列，减少锁的持有时间
+    {
+        lock_guard<mutex> lock(taskMutex);
+        swap(tasks, pendingTasks);// 交换待执行的任务队列，减少锁的持有时间
+    }
+    while(!tasks.empty()){
+
+        tasks.front()();// 执行任务
+        tasks.pop();// 执行完一个任务就弹出
     }
 }
 
@@ -202,6 +229,9 @@ void Reactor:: closeConnection(int fd){// 关闭连接，清理资源
     cout << "close client: " << fd << endl;
     epoll_ctl(epfd, EPOLL_CTL_DEL, fd, nullptr);// 关闭 fd
     close(fd);
+    auto it = conns.find(fd);// 查找连接对象
+    if(it != conns.end()){// 删除连接对象
     delete conns[fd];
     conns.erase(fd);
+    }
 }
