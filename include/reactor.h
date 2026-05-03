@@ -3,6 +3,7 @@
 #include <queue>
 #include <functional>
 #include <mutex>    
+#include <sys/eventfd.h>
 
 #include "threadpool.h"
 #include "connection.h"
@@ -22,10 +23,12 @@ private:
     map<int, Connection*> conns;// fd 到连接对象的映射
     queue<function<void()>> pendingTasks;// 待执行的任务队列
     mutex taskMutex;// 任务队列的互斥锁
+    int wakeupFd;// 用于唤醒 epoll_wait 的事件 fd
 
     void handleAccept();
     void handleRead(int fd);
     void closeConnection(int fd);
     void handleWrite(int fd);
+    void handleWakeup();// 处理事件 fd 的可读事件，说明有新任务了
 };
 
