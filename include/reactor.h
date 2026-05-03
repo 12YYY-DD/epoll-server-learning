@@ -4,6 +4,7 @@
 #include <functional>
 #include <mutex>    
 #include <sys/eventfd.h>
+#include <memory>
 
 #include "threadpool.h"
 #include "connection.h"
@@ -20,7 +21,7 @@ private:
     int sockfd;// 服务器 fd
     int epfd;// epoll fd
     ThreadPool pool;
-    map<int, Connection*> conns;// fd 到连接对象的映射
+    map<int, shared_ptr<Connection>> conns;// fd 到连接对象的映射
     queue<function<void()>> pendingTasks;// 待执行的任务队列
     mutex taskMutex;// 任务队列的互斥锁
     int wakeupFd;// 用于唤醒 epoll_wait 的事件 fd
