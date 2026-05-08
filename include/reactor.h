@@ -31,5 +31,6 @@ private:
     void closeConnection(int fd);
     void handleWrite(int fd);
     void handleWakeup();// 处理事件 fd 的可读事件，说明有新任务了
+    void checkTimeouts();// 定期检查连接的超时情况，关闭超时的连接
 };
 
